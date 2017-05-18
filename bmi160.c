@@ -713,9 +713,12 @@ static void PIOS_BMI160_Task(void *parameters)
 
 int main()
 {
+	int ret;
   struct pios_bmi160_cfg * cfg = (struct pios_bmi160_cfg *) malloc(sizeof(*cfg));
 	/* TODO populate cfg first */
-	PIOS_BMI160_Init(3, 0, cfg, 0);
+	if (ret = PIOS_BMI160_Init(3, 0, cfg, 0) < 0) {
+		fprintf(stderr, "init error %d\n", ret);
+	}
 	PIOS_BMI160_Task(NULL);
 	return 0;
 }
