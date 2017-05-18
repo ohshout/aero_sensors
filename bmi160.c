@@ -489,16 +489,17 @@ static int32_t PIOS_BMI160_ReleaseBus()
  */
 static uint8_t PIOS_BMI160_ReadReg(uint8_t reg)
 {
-	uint8_t data;
+	uint8_t tx[2] = {reg | 0x80, 0x00}, rx[2] = {0,};
 
 	//PIOS_BMI160_ClaimBus();
 
-	PIOS_SPI_TransferByte(&(dev->spi_dev), 0x80 | reg); // request byte
-	data = PIOS_SPI_TransferByte(&(dev->spi_dev), 0);   // receive response
+	//PIOS_SPI_TransferByte(&(dev->spi_dev), 0x80 | reg); // request byte
+	//data = PIOS_SPI_TransferByte(&(dev->spi_dev), 0);   // receive response
+	PIOS_SPI_TransferBlock(&(dev->spi_dev), tx, rx, 2);
 
 	//PIOS_BMI160_ReleaseBus();
 
-	return data;
+	return rx[0];
 }
 
 /**
