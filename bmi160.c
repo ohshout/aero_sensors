@@ -42,8 +42,9 @@
 #include <unistd.h>
 #include "physical_constants.h"
 #include "bmi160.h"
+#include "delay.h"
 #include "sensors.h"
-#include "spi.h"
+#include "spi2.h"
 //#include "pios_semaphore.h"
 //#include "pios_thread.h"
 //#include "pios_queue.h"
@@ -91,7 +92,7 @@ enum pios_bmi160_dev_magic {
 struct bmi160_dev {
 	uint32_t spi_id;
 	uint32_t slave_num;
-	struct pios_spi_dev * spi_dev;
+	struct spidev spi_dev;
 	const struct pios_bmi160_cfg *cfg;
 	//struct pios_queue *gyro_queue;
 	//struct pios_queue *accel_queue;
@@ -133,15 +134,10 @@ int32_t PIOS_BMI160_Init(uint32_t spi_id, uint32_t slave_num, const struct pios_
 	dev->cfg = cfg;
 
 	/* --TC-- initialize SPI bus */
-	struct pios_spi_dev * spi_dev = (struct pios_spi_dev *) malloc(sizeof (*spi_dev));
-	sprintf (dev_name, "/dev/spidev%d.%d", spi_id, slave_num);
-	spi_dev->spi_fd = open (dev_name, O_RDWR);
-	if (spi_dev->spi_fd < 0) {
-		fprintf(stderr, "failed to open spi dev: %s\n", dev_name);
-		exit(-1);
+	if (SPI_Init(&(dev->spi_dev)) < 0) {
+		perror("spi init failed\n");
+		exit (-1);
 	}
-	spi_dev->speed_hz = 10000000;
-	dev->spi_dev = spi_dev;
 
 	/* Configure the scales */
 	switch (cfg->acc_range){
@@ -497,8 +493,8 @@ static uint8_t PIOS_BMI160_ReadReg(uint8_t reg)
 
 	//PIOS_BMI160_ClaimBus();
 
-	PIOS_SPI_TransferByte(dev->spi_dev, 0x80 | reg); // request byte
-	data = PIOS_SPI_TransferByte(dev->spi_dev, 0);   // receive response
+	PIOS_SPI_TransferByte(&(dev->spi_dev), 0x80 | reg); // request byte
+	data = PIOS_SPI_TransferByte(&(dev->spi_dev), 0);   // receive response
 
 	//PIOS_BMI160_ReleaseBus();
 
@@ -516,8 +512,8 @@ static int32_t PIOS_BMI160_WriteReg(uint8_t reg, uint8_t data)
 	//if (PIOS_BMI160_ClaimBus() != 0)
 	//	return -1;
 
-	PIOS_SPI_TransferByte(dev->spi_dev, 0x7f & reg);
-	PIOS_SPI_TransferByte(dev->spi_dev, data);
+	PIOS_SPI_TransferByte(&(dev->spi_dev), 0x7f & reg);
+	PIOS_SPI_TransferByte(&(dev->spi_dev), data);
 
 	//PIOS_BMI160_ReleaseBus();
 
@@ -580,7 +576,7 @@ static void PIOS_BMI160_Task(void *parameters)
 		//if (PIOS_BMI160_ClaimBus() != 0)
 		//	continue;
 
-		if (PIOS_SPI_TransferBlock(dev->spi_dev, bmi160_tx_buf, bmi160_rec_buf, BUFFER_SIZE) < 0) {
+		if (PIOS_SPI_TransferBlock(&(dev->spi_dev), bmi160_tx_buf, bmi160_rec_buf, BUFFER_SIZE) < 0) {
 			//PIOS_BMI160_ReleaseBus();
 			continue;
 		}
@@ -687,7 +683,7 @@ static void PIOS_BMI160_Task(void *parameters)
 
 			uint8_t bmi160_tx_buf[BUFFER_SIZE] = {BMI160_REG_TEMPERATURE_0 | 0x80, 0, 0, 0, 0, 0,
 					0, 0, 0, 0, 0, 0, 0};
-			if (PIOS_SPI_TransferBlock(dev->spi_dev, bmi160_tx_buf, bmi160_rec_buf, 3) < 0) {
+			if (PIOS_SPI_TransferBlock(&(dev->spi_dev), bmi160_tx_buf, bmi160_rec_buf, 3) < 0) {
 				//PIOS_BMI160_ReleaseBus();
 				continue;
 			}
