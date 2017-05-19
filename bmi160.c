@@ -89,6 +89,15 @@ enum pios_bmi160_dev_magic {
 	PIOS_BMI160_DEV_MAGIC = 0x76dfa5ba,
 };
 
+static const struct pios_bmi160_cfg default_bmi160_cfg = {
+	//.exti_cfg = &pios_exti_bmi160_cfg,
+	.orientation = PIOS_BMI160_TOP_0DEG,
+	.odr = PIOS_BMI160_ODR_1600_Hz,
+	.acc_range = PIOS_BMI160_RANGE_8G,
+	.gyro_range = PIOS_BMI160_RANGE_2000DPS,
+	.temperature_interleaving = 50
+};
+
 struct bmi160_dev {
 	uint32_t spi_id;
 	uint32_t slave_num;
@@ -179,11 +188,13 @@ int32_t PIOS_BMI160_Init(uint32_t spi_id, uint32_t slave_num, const struct pios_
 	}
 
 	/* Read this address to activate SPI (see p. 84) */
+	printf("Activate SPI interface\n");
 	PIOS_BMI160_ReadReg(0x7F);
 	PIOS_DELAY_WaitmS(10); // Give SPI some time to start up
 
 	/* Check the chip ID */
-	if (PIOS_BMI160_ReadReg(BMI160_REG_CHIPID) != 0xd1){
+	printf("Check chip ID\n");
+	if (PIOS_BMI160_ReadReg(BMI160_REG_CHIPID) != 0xd1) {
 		return -2;
 	}
 
@@ -216,8 +227,9 @@ int32_t PIOS_BMI160_Init(uint32_t spi_id, uint32_t slave_num, const struct pios_
 	//		PIOS_BMI160_Task, "pios_bmi160", PIOS_BMI160_TASK_STACK_BYTES, NULL, PIOS_BMI160_TASK_PRIORITY);
 	//PIOS_Assert(dev->TaskHandle != NULL);
 
-	PIOS_SENSORS_SetSampleRate(PIOS_SENSOR_ACCEL, 1600);
-	PIOS_SENSORS_SetSampleRate(PIOS_SENSOR_GYRO, 1600);
+	/* --TC-- sample rate is used by other modules not available here */
+	//PIOS_SENSORS_SetSampleRate(PIOS_SENSOR_ACCEL, 1600);
+	//PIOS_SENSORS_SetSampleRate(PIOS_SENSOR_GYRO, 1600);
 
 	/* --TC-- again, no queues */
 	//PIOS_SENSORS_Register(PIOS_SENSOR_ACCEL, dev->accel_queue);
@@ -234,6 +246,7 @@ static int32_t PIOS_BMI160_Config(const struct pios_bmi160_cfg *cfg)
 {
 
 	// Set normal power mode for gyro and accelerometer
+	printf("Set power mode\n");
 	if (PIOS_BMI160_WriteReg(BMI160_REG_CMD, BMI160_PMU_CMD_PMU_GYR_NORMAL) != 0){
 		return -1;
 	}
@@ -245,6 +258,7 @@ static int32_t PIOS_BMI160_Config(const struct pios_bmi160_cfg *cfg)
 	PIOS_DELAY_WaitmS(5); // can take up to 3.8ms
 
 	// Verify that normal power mode was entered
+	printf("Verify normal power mode was entered\n");
 	uint8_t pmu_status = PIOS_BMI160_ReadReg(BMI160_REG_PMU_STAT);
 	if ((pmu_status & 0x3C) != 0x14){
 		return -3;
@@ -252,28 +266,33 @@ static int32_t PIOS_BMI160_Config(const struct pios_bmi160_cfg *cfg)
 
 	// Set odr and ranges
 	// Set acc_us = 0 acc_bwp = 0b010 so only the first filter stage is used
+	printf("Setting acc config: odr=%x\n", cfg->odr);
 	if (PIOS_BMI160_WriteReg(BMI160_REG_ACC_CONF, 0x20 | cfg->odr) != 0){
 		return -3;
 	}
 	PIOS_DELAY_WaitmS(1);
 
+	printf("Setting gyro config: odr=%x\n", cfg->odr);
 	// Set gyr_bwp = 0b010 so only the first filter stage is used
 	if (PIOS_BMI160_WriteReg(BMI160_REG_GYR_CONF, 0x20 | cfg->odr) != 0){
 		return -4;
 	}
 	PIOS_DELAY_WaitmS(1);
 
+	printf("Setting acc range: %x\n", cfg->acc_range);
 	if (PIOS_BMI160_WriteReg(BMI160_REG_ACC_RANGE, cfg->acc_range) != 0){
 		return -5;
 	}
 	PIOS_DELAY_WaitmS(1);
 
+	printf("Setting gyro range: %x\n", cfg->gyro_range);
 	if (PIOS_BMI160_WriteReg(BMI160_REG_GYR_RANGE, cfg->gyro_range) != 0){
 		return -6;
 	}
 	PIOS_DELAY_WaitmS(1);
 
 	// Enable offset compensation
+	printf("Enable offset compensation\n");
 	uint8_t val = PIOS_BMI160_ReadReg(BMI160_REG_OFFSET_0);
 	if (PIOS_BMI160_WriteReg(BMI160_REG_OFFSET_0, val | 0xC0) != 0){
 		return -7;
@@ -499,7 +518,7 @@ static uint8_t PIOS_BMI160_ReadReg(uint8_t reg)
 
 	//PIOS_BMI160_ReleaseBus();
 
-	return rx[0];
+	return rx[1];
 }
 
 /**
@@ -510,11 +529,13 @@ static uint8_t PIOS_BMI160_ReadReg(uint8_t reg)
  */
 static int32_t PIOS_BMI160_WriteReg(uint8_t reg, uint8_t data)
 {
+	uint8_t tx[2] = {reg, data}, rx[2];
 	//if (PIOS_BMI160_ClaimBus() != 0)
 	//	return -1;
 
-	PIOS_SPI_TransferByte(&(dev->spi_dev), 0x7f & reg);
-	PIOS_SPI_TransferByte(&(dev->spi_dev), data);
+	//PIOS_SPI_TransferByte(&(dev->spi_dev), 0x7f & reg);
+	//PIOS_SPI_TransferByte(&(dev->spi_dev), data);
+	PIOS_SPI_TransferBlock(&(dev->spi_dev), tx, rx, 2);
 
 	//PIOS_BMI160_ReleaseBus();
 
@@ -705,15 +726,17 @@ static void PIOS_BMI160_Task(void *parameters)
 		//PIOS_Queue_Send(dev->gyro_queue, &gyro_data, 0);
 
 		temp_interleave_cnt += 1;
+
+		PIOS_DELAY_WaitmS(100);
 	}
 }
 
 int main()
 {
 	int ret;
-  struct pios_bmi160_cfg * cfg = (struct pios_bmi160_cfg *) malloc(sizeof(*cfg));
-	/* TODO populate cfg first */
-	if (ret = PIOS_BMI160_Init(3, 0, cfg, 0) < 0) {
+	/* default_bmi160_cfg copied from BrainFPV */
+  struct pios_bmi160_cfg * cfg = &default_bmi160_cfg;
+	if ((ret = PIOS_BMI160_Init(3, 0, cfg, 0)) < 0) {
 		fprintf(stderr, "init error %d\n", ret);
 	}
 	PIOS_BMI160_Task(NULL);
