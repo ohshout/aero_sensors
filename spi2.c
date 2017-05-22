@@ -91,14 +91,14 @@ int32_t PIOS_SPI_TransferBlock(struct spidev * spi_dev, const uint8_t *send_buff
 	return transfer(spi_dev, send_buffer, receive_buffer, len);
 }
 
-uint8_t PIOS_SPI_TransferByte(struct spidev * spi_dev, uint8_t b)
-{
-	uint8_t ret = 0;
-
-	PIOS_SPI_TransferBlock(spi_dev, &b, &ret, 1);
-
-	return ret;
-}
+//uint8_t PIOS_SPI_TransferByte(struct spidev * spi_dev, uint8_t b)
+//{
+//	uint8_t ret = 0;
+//
+//	PIOS_SPI_TransferBlock(spi_dev, &b, &ret, 1);
+//
+//	return ret;
+//}
 
 /*
  * Main function

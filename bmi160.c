@@ -508,6 +508,7 @@ static int32_t PIOS_BMI160_ReleaseBus()
  */
 static uint8_t PIOS_BMI160_ReadReg(uint8_t reg)
 {
+	/* BMI160 use 16 bit SPI protocol */
 	uint8_t tx[2] = {reg | 0x80, 0x00}, rx[2] = {0,};
 
 	//PIOS_BMI160_ClaimBus();
@@ -529,6 +530,7 @@ static uint8_t PIOS_BMI160_ReadReg(uint8_t reg)
  */
 static int32_t PIOS_BMI160_WriteReg(uint8_t reg, uint8_t data)
 {
+	/* BMI160 use 16 bit SPI protocol */
 	uint8_t tx[2] = {reg, data}, rx[2];
 	//if (PIOS_BMI160_ClaimBus() != 0)
 	//	return -1;
@@ -592,6 +594,8 @@ static void PIOS_BMI160_Task(void *parameters)
 		};
 
 		uint8_t bmi160_rec_buf[BUFFER_SIZE];
+		/* --TC-- multiple read, only need the first register address. See BMI160
+		 * datasheet, Figure 25 for details */
 		uint8_t bmi160_tx_buf[BUFFER_SIZE] = {BMI160_REG_GYR_DATA_X_LSB | 0x80, 0, 0, 0, 0, 0,
 				0, 0, 0, 0, 0, 0, 0};
 
