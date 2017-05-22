@@ -700,6 +700,8 @@ static void PIOS_BMI160_Task(void *parameters)
 		gyro_data.y *= dev->gyro_scale;
 		gyro_data.z *= dev->gyro_scale;
 
+#ifdef TEMP
+
 		// Get the temperature
 		// NOTE: We do this down here so the chip-select has some time to go low. Strange things happen
 		// When this is done right after readin the accels / gyros
@@ -730,6 +732,11 @@ static void PIOS_BMI160_Task(void *parameters)
 		//PIOS_Queue_Send(dev->gyro_queue, &gyro_data, 0);
 
 		temp_interleave_cnt += 1;
+#endif
+
+		/* display all readings */
+		printf("accel: [%f, %f, %f]\n", accel_data.x, accel_data.y, accel_data.z);
+		printf("gyro:  [%f, %f, %f]\n", gyro_data.x, gyro_data.y, gyro_data.z);
 
 		PIOS_DELAY_WaitmS(100);
 	}

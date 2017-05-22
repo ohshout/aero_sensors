@@ -61,10 +61,12 @@ static int transfer(struct spidev *dev, const uint8_t * tx, uint8_t * rx, uint16
 	//memset(&tx[tr->len], 0x00, len - tr->len);
 	//memset(rx, 0x00, len);
 
+#ifdef SPI_DEBUG
 	printf("TX: ");
 	for (i = 0; i < len; i++)
 		printf("0x%x ", tx[i]);
 	printf("\n");
+#endif
 
 	/* prepare transfer */
 	iotr.tx_buf = (unsigned long)tx;
@@ -75,10 +77,12 @@ static int transfer(struct spidev *dev, const uint8_t * tx, uint8_t * rx, uint16
 	if (ret < 1)
 		printf("ERROR: failed to transfer %s\n", dev->node);
 	else {
+#ifdef SPI_DEBUG
 		printf("RX: ");
 		for (i = 0; i < len; i++)
 			printf("0x%x ", rx[i]);
 		printf("\n");
+#endif
 	}
 
 	//free(tx);
