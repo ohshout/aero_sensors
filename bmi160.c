@@ -748,7 +748,7 @@ int main()
 	/* default_bmi160_cfg copied from BrainFPV */
   struct pios_bmi160_cfg * cfg = &default_bmi160_cfg;
 	if ((ret = PIOS_BMI160_Init(3, 0, cfg, 0)) < 0) {
-		fprintf(stderr, "init error %d\n", ret);
+		fprintf(stderr, "BMI160 init error %d\n", ret);
 	}
 	PIOS_BMI160_Task(NULL);
 	return 0;
