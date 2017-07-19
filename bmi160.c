@@ -34,12 +34,19 @@
 /* Project Includes */
 //#include "pios.h"
 
+#define USE_UDP
+
+#ifdef USE_UDP
+#include "udplink.h"
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <math.h>
 #include "physical_constants.h"
 #include "bmi160.h"
 #include "delay.h"
@@ -112,6 +119,17 @@ struct bmi160_dev {
 	enum pios_bmi160_dev_magic magic;
 };
 
+#ifdef USE_UDP
+typedef struct {
+  double timestamp;                   // in seconds
+  double imu_angular_velocity_rpy[3]; // rad/s -> range: +/- 8192; +/- 2000 deg/se
+  double imu_linear_acceleration_xyz[3];    // m/s/s NED, body frame -> sim 1G = 9.80665, FC 1G = 256
+  double imu_orientation_quat[4];     //w, x, y, z
+  double velocity_xyz[3];             // m/s, earth frame
+  double position_xyz[3];             // meters, NED from origin
+} fdm_packet;
+#endif
+
 //! Global structure for this device device
 static struct bmi160_dev *dev;
 
@@ -123,6 +141,9 @@ static int32_t PIOS_BMI160_Validate(struct bmi160_dev *dev);
 static void PIOS_BMI160_Task(void *parameters);
 static uint8_t PIOS_BMI160_ReadReg(uint8_t reg);
 static int32_t PIOS_BMI160_WriteReg(uint8_t reg, uint8_t data);
+#ifdef USE_UDP
+static udpLink_t stateLink;
+#endif
 //static int32_t PIOS_BMI160_ClaimBus();
 //static int32_t PIOS_BMI160_ReleaseBus();
 
@@ -235,6 +256,9 @@ int32_t PIOS_BMI160_Init(uint32_t spi_id, uint32_t slave_num, const struct pios_
 	//PIOS_SENSORS_Register(PIOS_SENSOR_ACCEL, dev->accel_queue);
 	//PIOS_SENSORS_Register(PIOS_SENSOR_GYRO, dev->gyro_queue);
 
+	int ret;
+	ret = udpInit(&stateLink, "127.0.0.1", 9003, false);
+	printf("start state link...%d\n", ret);
 	return 0;
 }
 
@@ -568,6 +592,8 @@ static void PIOS_BMI160_Task(void *parameters)
 {
 	float temperature = 0.f;
 	uint8_t temp_interleave_cnt = 0;
+	fdm_packet fdmPkt;
+	struct timeval tv;
 
 	while (1) {
 		/* --TC-- Use polling mode as we currently don't
@@ -619,6 +645,8 @@ static void PIOS_BMI160_Task(void *parameters)
 		float gyro_y = (int16_t)(bmi160_rec_buf[IDX_GYRO_YOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_YOUT_L]);
 		float gyro_z = (int16_t)(bmi160_rec_buf[IDX_GYRO_ZOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_ZOUT_L]);
 
+		/* the UDP server expects raw sensor readings */
+#ifndef USE_UDP
 		/* 
 		 * Convert from sensor frame (x: forward y: left z: up) to
 		 * TL convention (x: forward y: right z: down).
@@ -699,6 +727,7 @@ static void PIOS_BMI160_Task(void *parameters)
 		gyro_data.x *= dev->gyro_scale;
 		gyro_data.y *= dev->gyro_scale;
 		gyro_data.z *= dev->gyro_scale;
+#endif
 
 #ifdef TEMP
 
@@ -737,6 +766,24 @@ static void PIOS_BMI160_Task(void *parameters)
 		/* display all readings */
 		printf("accel: [%f, %f, %f]\n", accel_data.x, accel_data.y, accel_data.z);
 		printf("gyro:  [%f, %f, %f]\n", gyro_data.x, gyro_data.y, gyro_data.z);
+
+#ifdef USE_UDP
+		/* set timestamp */
+		if (gettimeofday (&tv, NULL) < 0) {
+			perror("gettimeofday failed\n");
+		}
+		fdmPkt.timestamp = tv.tv_sec;
+
+		/* set imu_angular_velocity_rpy */
+		fdmPkt.imu_angular_velocity_rpy[0] = gyro_data.x;
+		fdmPkt.imu_angular_velocity_rpy[1] = gyro_data.y;
+		fdmPkt.imu_angular_velocity_rpy[2] = gyro_data.z;
+
+		/* set imu_linear_acceleration_xyz */
+
+		/* send udp datagram */
+		udpSend(&stateLink, &fdmPkt, sizeof(fdmPkt));
+#endif
 
 		PIOS_DELAY_WaitmS(100);
 	}
