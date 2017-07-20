@@ -103,6 +103,8 @@ struct pios_bmm150_dev {
 
 //! Global structure for this device device
 static struct pios_bmm150_dev *bmm_dev;
+struct pios_sensor_mag_data mag_data;
+
 
 static struct pios_bmm150_cfg cfg = { .orientation = PIOS_BMM_TOP_90DEG };
 
@@ -477,42 +479,27 @@ static int32_t PIOS_BMM_WriteReg(uint8_t reg, uint8_t buffer)
 	return PIOS_BMM150_Write(reg, buffer);
 }
 
-static void PIOS_BMM_Task(void *parameters)
+void bmm150_do_task()
 {
-	(void)parameters;
+	uint8_t drdy;
+	if (PIOS_BMM_ReadReg(BMM150_REG_MAG_HALL_RESISTANCE_LSB, &drdy))
+		return;
+	/* Check if there's any new data.  If not.. wait 6 more ms
+	 * (we expect it at 33ms intervals).
+	 * At the end of this we sleep 24, which results in a first
+	 * drdy check at 30ms [3ms early] and the next check at 36ms
+	 * [3ms late].  Should keep us disciplined very close to
+	 * measurements so they're not sitting around long.
+	 */
+	if (!(drdy & BMM150_VAL_MAG_HALL_RESISTANCE_LSB_DRDY))
+		return;
 
-	while (true) {
-		PIOS_Thread_Sleep(6);		/* XXX */
-
-		uint8_t drdy;
-
-		if (PIOS_BMM_ReadReg(BMM150_REG_MAG_HALL_RESISTANCE_LSB,
-					&drdy))
-			continue;
-
-		/* Check if there's any new data.  If not.. wait 6 more ms
-		 * (we expect it at 33ms intervals).
-		 * At the end of this we sleep 24, which results in a first
-		 * drdy check at 30ms [3ms early] and the next check at 36ms
-		 * [3ms late].  Should keep us disciplined very close to
-		 * measurements so they're not sitting around long.
-		 */
-		if (!(drdy & BMM150_VAL_MAG_HALL_RESISTANCE_LSB_DRDY))
-			continue;
-
-#if 0
-		if (PIOS_BMM_ClaimBus() != 0)
-			continue;
-#endif
-
-		uint8_t sensor_buf[BMM150_REG_MAG_HALL_RESISTANCE_MSB -
-			BMM150_REG_MAG_X_LSB + 1];
-
-		/* 
-		 * --TC-- use I2C instead of SPI interface to read sensor data
-		 * Do a multiple read here
-		 */
-		/*
+	uint8_t sensor_buf[BMM150_REG_MAG_HALL_RESISTANCE_MSB - BMM150_REG_MAG_X_LSB + 1];
+	/* 
+	 * --TC-- use I2C instead of SPI interface to read sensor data
+	 * Do a multiple read here
+	 */
+	/*
 		PIOS_SPI_TransferByte(bmm_dev->i2c_addr,
 				0x80 | BMM150_REG_MAG_X_LSB);
 
@@ -521,106 +508,122 @@ static void PIOS_BMM_Task(void *parameters)
 			//PIOS_BMM_ReleaseBus();
 			continue;
 		}
-		*/
-		PIOS_BMM150_Read(BMM150_REG_MAG_X_LSB, sensor_buf, sizeof(sensor_buf));
+	*/
+	PIOS_BMM150_Read(BMM150_REG_MAG_X_LSB, sensor_buf, sizeof(sensor_buf));
 
-		//PIOS_BMM_ReleaseBus();
+	//PIOS_BMM_ReleaseBus();
 
-		/* The Bosch compensation functions appear to expect this data
-		 * right-aligned, signed.  The unpacking functions in the 
-		 * library are rather obtuse, but they do sign extension
-		 * on the right align operation.
-		 *
-		 * We form them into a 16 bit left aligned signed value,
-		 * then shift them right to right align and sign extend.
-		 * Hopefully this is clearer.
-		 */
+	/* The Bosch compensation functions appear to expect this data
+	 * right-aligned, signed.  The unpacking functions in the 
+	 * library are rather obtuse, but they do sign extension
+	 * on the right align operation.
+	 *
+	 * We form them into a 16 bit left aligned signed value,
+	 * then shift them right to right align and sign extend.
+	 * Hopefully this is clearer.
+	 */
 
 #define PACK_REG13_ADDR_OFFSET(b, reg, off) ((int16_t) ( (b[reg-off] & 0xf8) | (b[reg-off+1] << 8) ))
 #define PACK_REG14_ADDR_OFFSET(b, reg, off) ((int16_t) ( (b[reg-off] & 0xfc) | (b[reg-off+1] << 8) ))
 #define PACK_REG15_ADDR_OFFSET(b, reg, off) ((int16_t) ( (b[reg-off] & 0xfe) | (b[reg-off+1] << 8) ))
 
-		int16_t raw_x, raw_y, raw_z, raw_r;
-		raw_x = PACK_REG13_ADDR_OFFSET(sensor_buf, BMM150_REG_MAG_X_LSB,
-				BMM150_REG_MAG_X_LSB);
-		raw_x >>= 3;
-		raw_y = PACK_REG13_ADDR_OFFSET(sensor_buf, BMM150_REG_MAG_Y_LSB,
-				BMM150_REG_MAG_X_LSB);
-		raw_y >>= 3;
-		raw_z = PACK_REG15_ADDR_OFFSET(sensor_buf, BMM150_REG_MAG_Z_LSB,
-				BMM150_REG_MAG_X_LSB);
-		raw_z >>= 1;
-		raw_r = PACK_REG14_ADDR_OFFSET(sensor_buf,
-				BMM150_REG_MAG_HALL_RESISTANCE_LSB,
-				BMM150_REG_MAG_X_LSB);
-		raw_r >>= 2;
+	int16_t raw_x, raw_y, raw_z, raw_r;
+	raw_x = PACK_REG13_ADDR_OFFSET(sensor_buf, BMM150_REG_MAG_X_LSB,
+			BMM150_REG_MAG_X_LSB);
+	raw_x >>= 3;
+	raw_y = PACK_REG13_ADDR_OFFSET(sensor_buf, BMM150_REG_MAG_Y_LSB,
+			BMM150_REG_MAG_X_LSB);
+	raw_y >>= 3;
+	raw_z = PACK_REG15_ADDR_OFFSET(sensor_buf, BMM150_REG_MAG_Z_LSB,
+			BMM150_REG_MAG_X_LSB);
+	raw_z >>= 1;
+	raw_r = PACK_REG14_ADDR_OFFSET(sensor_buf,
+			BMM150_REG_MAG_HALL_RESISTANCE_LSB,
+			BMM150_REG_MAG_X_LSB);
+	raw_r >>= 2;
 
-		// Datasheet is typical res 0.3 uT.  X/Y -4096 to 4095,
-		// Z -16384 to 16383.  .3*4095 checks out with expected range
-		// (+/- 1228 uT vs datasheet +/- 1300uT)
-		// .3 * 16384 is off by a factor of 2 though
-		// (+/- 4915 uT vs datasheet +/- 2500uT)
+	// Datasheet is typical res 0.3 uT.  X/Y -4096 to 4095,
+	// Z -16384 to 16383.  .3*4095 checks out with expected range
+	// (+/- 1228 uT vs datasheet +/- 1300uT)
+	// .3 * 16384 is off by a factor of 2 though
+	// (+/- 4915 uT vs datasheet +/- 2500uT)
 
-		struct pios_sensor_mag_data mag_data;
+	float mag_x = bmm050_compensate_X_float(bmm_dev,
+			raw_x, raw_r);
+	float mag_y = bmm050_compensate_Y_float(bmm_dev,
+		raw_y, raw_r);
+	float mag_z = bmm050_compensate_Z_float(bmm_dev,
+			raw_z, raw_r);
 
-		float mag_x = bmm050_compensate_X_float(bmm_dev,
-				raw_x, raw_r);
-		float mag_y = bmm050_compensate_Y_float(bmm_dev,
-				raw_y, raw_r);
-		float mag_z = bmm050_compensate_Z_float(bmm_dev,
-				raw_z, raw_r);
+#ifndef USE_UDP
+	switch (bmm_dev->cfg->orientation) {
+		case PIOS_BMM_TOP_0DEG:
+			mag_data.y  =  mag_x;
+			mag_data.x  =  mag_y;
+			mag_data.z  = -mag_z;
+			break;
+		case PIOS_BMM_TOP_90DEG:
+			mag_data.y  = -mag_y;
+			mag_data.x  =  mag_x;
+			mag_data.z  = -mag_z;
+			break;
+		case PIOS_BMM_TOP_180DEG:
+			mag_data.y  = -mag_x;
+			mag_data.x  = -mag_y;
+			mag_data.z  = -mag_z;
+			break;
+		case PIOS_BMM_TOP_270DEG:
+			mag_data.y  =  mag_y;
+			mag_data.x  = -mag_x;
+			mag_data.z  = -mag_z;
+			break;
+		case PIOS_BMM_BOTTOM_0DEG:
+			mag_data.y  = -mag_x;
+			mag_data.x  =  mag_y;
+			mag_data.z  =  mag_z;
+			break;
+		case PIOS_BMM_BOTTOM_90DEG:
+			mag_data.y  =  mag_y;
+			mag_data.x  =  mag_x;
+			mag_data.z  =  mag_z;
+			break;
+		case PIOS_BMM_BOTTOM_180DEG:
+			mag_data.y  =  mag_x;
+			mag_data.x  = -mag_y;
+			mag_data.z  =  mag_z;
+			break;
+		case PIOS_BMM_BOTTOM_270DEG:
+			mag_data.y  = -mag_y;
+			mag_data.x  = -mag_x;
+			mag_data.z  =  mag_z;
+			break;
+	}
 
-		switch (bmm_dev->cfg->orientation) {
-			case PIOS_BMM_TOP_0DEG:
-				mag_data.y  =  mag_x;
-				mag_data.x  =  mag_y;
-				mag_data.z  = -mag_z;
-				break;
-			case PIOS_BMM_TOP_90DEG:
-				mag_data.y  = -mag_y;
-				mag_data.x  =  mag_x;
-				mag_data.z  = -mag_z;
-				break;
-			case PIOS_BMM_TOP_180DEG:
-				mag_data.y  = -mag_x;
-				mag_data.x  = -mag_y;
-				mag_data.z  = -mag_z;
-				break;
-			case PIOS_BMM_TOP_270DEG:
-				mag_data.y  =  mag_y;
-				mag_data.x  = -mag_x;
-				mag_data.z  = -mag_z;
-				break;
-			case PIOS_BMM_BOTTOM_0DEG:
-				mag_data.y  = -mag_x;
-				mag_data.x  =  mag_y;
-				mag_data.z  =  mag_z;
-				break;
-			case PIOS_BMM_BOTTOM_90DEG:
-				mag_data.y  =  mag_y;
-				mag_data.x  =  mag_x;
-				mag_data.z  =  mag_z;
-				break;
-			case PIOS_BMM_BOTTOM_180DEG:
-				mag_data.y  =  mag_x;
-				mag_data.x  = -mag_y;
-				mag_data.z  =  mag_z;
-				break;
-			case PIOS_BMM_BOTTOM_270DEG:
-				mag_data.y  = -mag_y;
-				mag_data.x  = -mag_x;
-				mag_data.z  =  mag_z;
-				break;
-		}
+	/* scale-- it reads in microtesla.  we want milligauss */
+	float mag_scale = 10.0f;
 
-		/* scale-- it reads in microtesla.  we want milligauss */
-		float mag_scale = 10.0f;
+	mag_data.x *= mag_scale;
+	mag_data.y *= mag_scale;
+	mag_data.z *= mag_scale;
+#else
+	mag_data.x = mag_x;
+	mag_data.y = mag_y;
+	mag_data.z = mag_z;
+#endif
+}
 
-		mag_data.x *= mag_scale;
-		mag_data.y *= mag_scale;
-		mag_data.z *= mag_scale;
+static void PIOS_BMM_Task(void *parameters)
+{
+	(void)parameters;
 
-		printf("mag: [%f, %f, %f]\n", mag_data.x, mag_data.y, mag_data.z);
+	while (true) {
+		PIOS_Thread_Sleep(6);		/* XXX */
+
+#if 0
+		if (PIOS_BMM_ClaimBus() != 0)
+			continue;
+#endif
+		bmm150_do_task();
 
 		//PIOS_Queue_Send(bmm_dev->mag_queue, &mag_data, 0);
 
@@ -781,6 +784,7 @@ static inline float bmm050_compensate_Z_float(pios_bmm150_dev_t p_bmm050,
 	return inter_retval;
 }
 
+#if 0
 int main()
 {
 	/* BMM150 uses i2c bus 2, addr 0x12, according to Aero wiki */
@@ -791,6 +795,7 @@ int main()
 
 	return 0;
 }
+#endif
 
 
 /**

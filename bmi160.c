@@ -34,19 +34,12 @@
 /* Project Includes */
 //#include "pios.h"
 
-#define USE_UDP
-
-#ifdef USE_UDP
-#include "udplink.h"
-#endif
-
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <math.h>
 #include "physical_constants.h"
 #include "bmi160.h"
 #include "delay.h"
@@ -96,7 +89,7 @@ enum pios_bmi160_dev_magic {
 	PIOS_BMI160_DEV_MAGIC = 0x76dfa5ba,
 };
 
-static const struct pios_bmi160_cfg default_bmi160_cfg = {
+const struct pios_bmi160_cfg default_bmi160_cfg = {
 	//.exti_cfg = &pios_exti_bmi160_cfg,
 	.orientation = PIOS_BMI160_TOP_0DEG,
 	.odr = PIOS_BMI160_ODR_1600_Hz,
@@ -119,19 +112,10 @@ struct bmi160_dev {
 	enum pios_bmi160_dev_magic magic;
 };
 
-#ifdef USE_UDP
-typedef struct {
-  double timestamp;                   // in seconds
-  double imu_angular_velocity_rpy[3]; // rad/s -> range: +/- 8192; +/- 2000 deg/se
-  double imu_linear_acceleration_xyz[3];    // m/s/s NED, body frame -> sim 1G = 9.80665, FC 1G = 256
-  double imu_orientation_quat[4];     //w, x, y, z
-  double velocity_xyz[3];             // m/s, earth frame
-  double position_xyz[3];             // meters, NED from origin
-} fdm_packet;
-#endif
-
 //! Global structure for this device device
 static struct bmi160_dev *dev;
+struct pios_sensor_accel_data accel_data;
+struct pios_sensor_gyro_data gyro_data;
 
 //! Private functions
 static int32_t PIOS_BMI160_Config(const struct pios_bmi160_cfg *cfg);
@@ -141,9 +125,6 @@ static int32_t PIOS_BMI160_Validate(struct bmi160_dev *dev);
 static void PIOS_BMI160_Task(void *parameters);
 static uint8_t PIOS_BMI160_ReadReg(uint8_t reg);
 static int32_t PIOS_BMI160_WriteReg(uint8_t reg, uint8_t data);
-#ifdef USE_UDP
-static udpLink_t stateLink;
-#endif
 //static int32_t PIOS_BMI160_ClaimBus();
 //static int32_t PIOS_BMI160_ReleaseBus();
 
@@ -255,13 +236,7 @@ int32_t PIOS_BMI160_Init(uint32_t spi_id, uint32_t slave_num, const struct pios_
 	/* --TC-- again, no queues */
 	//PIOS_SENSORS_Register(PIOS_SENSOR_ACCEL, dev->accel_queue);
 	//PIOS_SENSORS_Register(PIOS_SENSOR_GYRO, dev->gyro_queue);
-
-	int ret;
-	ret = udpInit(&stateLink, "127.0.0.1", 9003, false);
-	printf("start state link...%d\n", ret);
-	return 0;
 }
-
 
 /**
  * @brief Configure the sensor
@@ -588,21 +563,12 @@ bool PIOS_BMI160_IRQHandler(void)
 #endif
 
 
-static void PIOS_BMI160_Task(void *parameters)
+void bmi160_do_task ()
 {
 	float temperature = 0.f;
 	uint8_t temp_interleave_cnt = 0;
-	fdm_packet fdmPkt;
-	struct timeval tv;
 
-	while (1) {
-		/* --TC-- Use polling mode as we currently don't
-		 * know this IRQ line BMI160 is using on the AERO board */
-		//Wait for data ready interrupt
-		//if (PIOS_Semaphore_Take(dev->data_ready_sema, PIOS_SEMAPHORE_TIMEOUT_MAX) != true)
-		//	continue;
-
-		enum {
+	enum {
 			IDX_REG = 0,
 			IDX_GYRO_XOUT_L,
 			IDX_GYRO_XOUT_H,
@@ -619,40 +585,37 @@ static void PIOS_BMI160_Task(void *parameters)
 			BUFFER_SIZE,
 		};
 
-		uint8_t bmi160_rec_buf[BUFFER_SIZE];
-		/* --TC-- multiple read, only need the first register address. See BMI160
-		 * datasheet, Figure 25 for details */
-		uint8_t bmi160_tx_buf[BUFFER_SIZE] = {BMI160_REG_GYR_DATA_X_LSB | 0x80, 0, 0, 0, 0, 0,
+	uint8_t bmi160_rec_buf[BUFFER_SIZE];
+	/* --TC-- multiple read, only need the first register address. See BMI160
+	 * datasheet, Figure 25 for details */
+	uint8_t bmi160_tx_buf[BUFFER_SIZE] = {BMI160_REG_GYR_DATA_X_LSB | 0x80, 0, 0, 0, 0, 0,
 				0, 0, 0, 0, 0, 0, 0};
 
-		//if (PIOS_BMI160_ClaimBus() != 0)
-		//	continue;
+	//if (PIOS_BMI160_ClaimBus() != 0)
+	//	continue;
 
-		if (PIOS_SPI_TransferBlock(&(dev->spi_dev), bmi160_tx_buf, bmi160_rec_buf, BUFFER_SIZE) < 0) {
-			//PIOS_BMI160_ReleaseBus();
-			continue;
-		}
-
+	if (PIOS_SPI_TransferBlock(&(dev->spi_dev), bmi160_tx_buf, bmi160_rec_buf, BUFFER_SIZE) < 0) {
 		//PIOS_BMI160_ReleaseBus();
+		return;
+	}
 
-		struct pios_sensor_accel_data accel_data;
-		struct pios_sensor_gyro_data gyro_data;
+	//PIOS_BMI160_ReleaseBus();
 
-		float accel_x = (int16_t)(bmi160_rec_buf[IDX_ACCEL_XOUT_H] << 8 | bmi160_rec_buf[IDX_ACCEL_XOUT_L]);
-		float accel_y = (int16_t)(bmi160_rec_buf[IDX_ACCEL_YOUT_H] << 8 | bmi160_rec_buf[IDX_ACCEL_YOUT_L]);
-		float accel_z = (int16_t)(bmi160_rec_buf[IDX_ACCEL_ZOUT_H] << 8 | bmi160_rec_buf[IDX_ACCEL_ZOUT_L]);
-		float gyro_x = (int16_t)(bmi160_rec_buf[IDX_GYRO_XOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_XOUT_L]);
-		float gyro_y = (int16_t)(bmi160_rec_buf[IDX_GYRO_YOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_YOUT_L]);
-		float gyro_z = (int16_t)(bmi160_rec_buf[IDX_GYRO_ZOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_ZOUT_L]);
 
-		/* the UDP server expects raw sensor readings */
+	float accel_x = (int16_t)(bmi160_rec_buf[IDX_ACCEL_XOUT_H] << 8 | bmi160_rec_buf[IDX_ACCEL_XOUT_L]);
+	float accel_y = (int16_t)(bmi160_rec_buf[IDX_ACCEL_YOUT_H] << 8 | bmi160_rec_buf[IDX_ACCEL_YOUT_L]);
+	float accel_z = (int16_t)(bmi160_rec_buf[IDX_ACCEL_ZOUT_H] << 8 | bmi160_rec_buf[IDX_ACCEL_ZOUT_L]);
+	float gyro_x = (int16_t)(bmi160_rec_buf[IDX_GYRO_XOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_XOUT_L]);
+	float gyro_y = (int16_t)(bmi160_rec_buf[IDX_GYRO_YOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_YOUT_L]);
+	float gyro_z = (int16_t)(bmi160_rec_buf[IDX_GYRO_ZOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_ZOUT_L]);
+
 #ifndef USE_UDP
-		/* 
-		 * Convert from sensor frame (x: forward y: left z: up) to
-		 * TL convention (x: forward y: right z: down).
-		 * See flight/Doc/imu_orientation.md for more detail
-		 */
-		switch (dev->cfg->orientation) {
+	/* 
+	 * Convert from sensor frame (x: forward y: left z: up) to
+	 * TL convention (x: forward y: right z: down).
+	 * See flight/Doc/imu_orientation.md for more detail
+	 */
+	switch (dev->cfg->orientation) {
 		case PIOS_BMI160_TOP_0DEG:
 			accel_data.x = accel_x;
 			accel_data.y = -accel_y;
@@ -717,78 +680,77 @@ static void PIOS_BMI160_Task(void *parameters)
 			gyro_data.y  = -gyro_x;
 			gyro_data.z  = gyro_z;
 			break;
-		}
+	}
 
-		// Apply sensor scaling
-		accel_data.x *= dev->accel_scale;
-		accel_data.y *= dev->accel_scale;
-		accel_data.z *= dev->accel_scale;
+	// Apply sensor scaling
+	accel_data.x *= dev->accel_scale;
+	accel_data.y *= dev->accel_scale;
+	accel_data.z *= dev->accel_scale;
 
-		gyro_data.x *= dev->gyro_scale;
-		gyro_data.y *= dev->gyro_scale;
-		gyro_data.z *= dev->gyro_scale;
+	gyro_data.x *= dev->gyro_scale;
+	gyro_data.y *= dev->gyro_scale;
+	gyro_data.z *= dev->gyro_scale;
+#else
+	accel_data.x = accel_x;
+	accel_data.y = accel_y;
+	accel_data.z = accel_z;
+
+	gyro_data.x = gyro_x;
+	gyro_data.y = gyro_y;
+	gyro_data.z = gyro_z;
 #endif
 
 #ifdef TEMP
+	// Get the temperature
+	// NOTE: We do this down here so the chip-select has some time to go low. Strange things happen
+	// When this is done right after readin the accels / gyros
+	if (temp_interleave_cnt % dev->cfg->temperature_interleaving == 0){
+		//if (PIOS_BMI160_ClaimBus() != 0)
+		//	continue;
 
-		// Get the temperature
-		// NOTE: We do this down here so the chip-select has some time to go low. Strange things happen
-		// When this is done right after readin the accels / gyros
-		if (temp_interleave_cnt % dev->cfg->temperature_interleaving == 0){
-			//if (PIOS_BMI160_ClaimBus() != 0)
-			//	continue;
-
-			uint8_t bmi160_tx_buf[BUFFER_SIZE] = {BMI160_REG_TEMPERATURE_0 | 0x80, 0, 0, 0, 0, 0,
-					0, 0, 0, 0, 0, 0, 0};
-			if (PIOS_SPI_TransferBlock(&(dev->spi_dev), bmi160_tx_buf, bmi160_rec_buf, 3) < 0) {
-				//PIOS_BMI160_ReleaseBus();
-				continue;
-			}
-
+		uint8_t bmi160_tx_buf[BUFFER_SIZE] = {BMI160_REG_TEMPERATURE_0 | 0x80, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0};
+		if (PIOS_SPI_TransferBlock(&(dev->spi_dev), bmi160_tx_buf, bmi160_rec_buf, 3) < 0) {
 			//PIOS_BMI160_ReleaseBus();
-			temperature =  23.f + (int16_t)(bmi160_rec_buf[2] << 8 | bmi160_rec_buf[1]) / 512.f;
+			continue;
 		}
 
-		accel_data.temperature = temperature;
-		gyro_data.temperature = temperature;
+		//PIOS_BMI160_ReleaseBus();
+		temperature =  23.f + (int16_t)(bmi160_rec_buf[2] << 8 | bmi160_rec_buf[1]) / 512.f;
+	}
+
+	accel_data.temperature = temperature;
+	gyro_data.temperature = temperature;
 
 
-		/* --TC-- it seems to me that queues are used for
-		 * communication between drivers and flight modules.
-		 * Since we don't have flight modules, no queue is
-		 * needed */
-		//PIOS_Queue_Send(dev->accel_queue, &accel_data, 0);
-		//PIOS_Queue_Send(dev->gyro_queue, &gyro_data, 0);
+	/* --TC-- it seems to me that queues are used for
+	 * communication between drivers and flight modules.
+	 * Since we don't have flight modules, no queue is
+	 * needed */
+	//PIOS_Queue_Send(dev->accel_queue, &accel_data, 0);
+	//PIOS_Queue_Send(dev->gyro_queue, &gyro_data, 0);
 
-		temp_interleave_cnt += 1;
+	temp_interleave_cnt += 1;
 #endif
+}
 
-		/* display all readings */
-		printf("accel: [%f, %f, %f]\n", accel_data.x, accel_data.y, accel_data.z);
-		printf("gyro:  [%f, %f, %f]\n", gyro_data.x, gyro_data.y, gyro_data.z);
+static void PIOS_BMI160_Task(void *parameters)
+{
 
-#ifdef USE_UDP
-		/* set timestamp */
-		if (gettimeofday (&tv, NULL) < 0) {
-			perror("gettimeofday failed\n");
-		}
-		fdmPkt.timestamp = tv.tv_sec;
-
-		/* set imu_angular_velocity_rpy */
-		fdmPkt.imu_angular_velocity_rpy[0] = gyro_data.x;
-		fdmPkt.imu_angular_velocity_rpy[1] = gyro_data.y;
-		fdmPkt.imu_angular_velocity_rpy[2] = gyro_data.z;
-
-		/* set imu_linear_acceleration_xyz */
-
-		/* send udp datagram */
-		udpSend(&stateLink, &fdmPkt, sizeof(fdmPkt));
-#endif
+	while (1) {
+		/* --TC-- Use polling mode as we currently don't
+		 * know this IRQ line BMI160 is using on the AERO board */
+		//Wait for data ready interrupt
+		//if (PIOS_Semaphore_Take(dev->data_ready_sema, PIOS_SEMAPHORE_TIMEOUT_MAX) != true)
+		//	continue;
+		
+		bmi160_do_task();
 
 		PIOS_DELAY_WaitmS(100);
 	}
 }
 
+#if 0
 int main()
 {
 	int ret;
@@ -800,3 +762,4 @@ int main()
 	PIOS_BMI160_Task(NULL);
 	return 0;
 }
+#endif

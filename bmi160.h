@@ -35,6 +35,8 @@
 #ifndef PIOS_BMI160_H
 #define PIOS_BMI160_H
 
+#include "sensors.h"
+
 enum pios_bmi160_orientation { // clockwise rotation from board forward
 	PIOS_BMI160_TOP_0DEG,
 	PIOS_BMI160_TOP_90DEG,
@@ -75,8 +77,12 @@ struct pios_bmi160_cfg {
 	uint8_t temperature_interleaving;
 };
 
+extern struct pios_sensor_accel_data accel_data;
+extern struct pios_sensor_gyro_data gyro_data;
+
 /* Public Functions */
 extern int32_t PIOS_BMI160_Init(uint32_t spi_id, uint32_t slave_num, const struct pios_bmi160_cfg *cfg, bool do_foc);
 extern bool PIOS_BMI160_IRQHandler(void);
+extern void bmi160_do_task();
 
 #endif /* PIOS_BMI160_H */
