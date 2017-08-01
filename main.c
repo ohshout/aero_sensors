@@ -1,8 +1,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <sys/time.h>
 #include "bmi160.h"
 #include "bmm150.h"
+#include "thread.h"
 
 #ifdef USE_UDP
 #include "udplink.h"

@@ -55,6 +55,8 @@ extern struct pios_sensor_mag_data mag_data;
  */
 int32_t PIOS_BMM150_SPI_Init(pios_bmm150_dev_t *dev, uint32_t spi_id, uint32_t slave_mag, const struct pios_bmm150_cfg *cfg);
 
+int32_t PIOS_BMM150_Init(uint32_t bus, uint32_t slave_addr);
+
 void bmm150_do_task();
 #endif /* PIOS_BMM150_H */
 
