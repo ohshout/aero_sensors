@@ -91,9 +91,11 @@ enum pios_bmi160_dev_magic {
 
 const struct pios_bmi160_cfg default_bmi160_cfg = {
 	//.exti_cfg = &pios_exti_bmi160_cfg,
-	.orientation = PIOS_BMI160_TOP_0DEG,
+	//.orientation = PIOS_BMI160_TOP_0DEG,
+	.orientation = PIOS_BMI160_BOTTOM_0DEG,
 	.odr = PIOS_BMI160_ODR_1600_Hz,
-	.acc_range = PIOS_BMI160_RANGE_8G,
+	//.acc_range = PIOS_BMI160_RANGE_8G,
+	.acc_range = PIOS_BMI160_RANGE_16G,
 	.gyro_range = PIOS_BMI160_RANGE_2000DPS,
 	.temperature_interleaving = 50
 };
@@ -609,7 +611,6 @@ void bmi160_do_task ()
 	float gyro_y = (int16_t)(bmi160_rec_buf[IDX_GYRO_YOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_YOUT_L]);
 	float gyro_z = (int16_t)(bmi160_rec_buf[IDX_GYRO_ZOUT_H] << 8 | bmi160_rec_buf[IDX_GYRO_ZOUT_L]);
 
-#ifndef USE_UDP
 	/* 
 	 * Convert from sensor frame (x: forward y: left z: up) to
 	 * TL convention (x: forward y: right z: down).
@@ -690,15 +691,6 @@ void bmi160_do_task ()
 	gyro_data.x *= dev->gyro_scale;
 	gyro_data.y *= dev->gyro_scale;
 	gyro_data.z *= dev->gyro_scale;
-#else
-	accel_data.x = accel_x;
-	accel_data.y = accel_y;
-	accel_data.z = accel_z;
-
-	gyro_data.x = gyro_x;
-	gyro_data.y = gyro_y;
-	gyro_data.z = gyro_z;
-#endif
 
 #ifdef TEMP
 	// Get the temperature
