@@ -9,5 +9,8 @@ bmm150: bmm150.c debug.c delay.c thread.c i2c.c
 main: main.c bmi160.c bmm150.c delay.c sensors.c debug.c thread.c i2c.c spi2.c udplink.c
 	gcc -DUSE_UDP -g -o $@ $^
 
+fake: fake.c udplink.c delay.c thread.c
+	gcc -o $@ $^
+
 clean:
-	rm -rf *.o bmm150 bmi160 main
+	rm -rf *.o bmm150 bmi160 main fake
