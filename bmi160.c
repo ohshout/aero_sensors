@@ -94,8 +94,7 @@ const struct pios_bmi160_cfg default_bmi160_cfg = {
 	//.orientation = PIOS_BMI160_TOP_0DEG,
 	.orientation = PIOS_BMI160_BOTTOM_0DEG,
 	.odr = PIOS_BMI160_ODR_1600_Hz,
-	//.acc_range = PIOS_BMI160_RANGE_8G,
-	.acc_range = PIOS_BMI160_RANGE_16G,
+	.acc_range = PIOS_BMI160_RANGE_8G,
 	.gyro_range = PIOS_BMI160_RANGE_2000DPS,
 	.temperature_interleaving = 50
 };

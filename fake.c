@@ -30,9 +30,9 @@ int main()
 		//count += 100;
 		//if (count > 20000) count = 0;
 		//fdmPkt.imu_linear_acceleration_xyz[0] = 100 * GRAVITY / 4096.f;
-		fdmPkt.imu_linear_acceleration_xyz[0] = 12.80665;
-		fdmPkt.imu_linear_acceleration_xyz[1] = 200;
-		fdmPkt.imu_linear_acceleration_xyz[2] = 400;
+		fdmPkt.imu_linear_acceleration_xyz[0] = 9.80665;
+		fdmPkt.imu_angular_velocity_rpy[1] = 200;
+		fdmPkt.imu_orientation_quat[2] = 40;
 
 		/* send udp datagram */
 		ret=udpSend(&stateLink, &fdmPkt, sizeof(fdmPkt));

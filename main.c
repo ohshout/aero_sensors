@@ -62,9 +62,9 @@ int main()
 		do_tasks();
 
 		/* display all readings */
-		printf("accel: [%f, %f, %f]\n", accel_data.x, accel_data.y, accel_data.z);
-		printf("gyro:  [%f, %f, %f]\n", gyro_data.x, gyro_data.y, gyro_data.z);
-		printf("mag: 	 [%f, %f, %f]\n", mag_data.x, mag_data.y, mag_data.z);
+		//printf("accel: [%f, %f, %f]\n", accel_data.x, accel_data.y, accel_data.z);
+		//printf("gyro:  [%f, %f, %f]\n", gyro_data.x, gyro_data.y, gyro_data.z);
+		//printf("mag: 	 [%f, %f, %f]\n", mag_data.x, mag_data.y, mag_data.z);
 
 #ifdef USE_UDP
 		fdm_packet fdmPkt;
@@ -87,6 +87,6 @@ int main()
 		/* send udp datagram */
 		udpSend(&stateLink, &fdmPkt, sizeof(fdmPkt));
 #endif
-		PIOS_Thread_Sleep(240);
+		//PIOS_Thread_Sleep(240);
 	}
 }
