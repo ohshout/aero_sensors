@@ -84,6 +84,11 @@ int main()
 		fdmPkt.imu_linear_acceleration_xyz[1] = accel_data.y;
 		fdmPkt.imu_linear_acceleration_xyz[2] = accel_data.z;
 
+		/* set imu_linear_acceleration_xyz, raw sensor data */
+		fdmPkt.imu_orientation_quat[1] = mag_data.x;
+		fdmPkt.imu_orientation_quat[2] = mag_data.y;
+		fdmPkt.imu_orientation_quat[3] = mag_data.z;
+
 		/* send udp datagram */
 		udpSend(&stateLink, &fdmPkt, sizeof(fdmPkt));
 #endif
